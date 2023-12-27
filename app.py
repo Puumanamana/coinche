@@ -32,13 +32,9 @@ def get_db():
         "SELECT * FROM coinche",
         con=sqlite3.connect('coinche.db'),
     )
-    return df
+    return df.iloc[::-1]
 
 def save_to_db(guess, suit, comment):
-    if suit is None:
-        st.warning("Veuillez choisir une couleur")
-        return
-
     db_entry = (
         ",".join(x.stem for x in st.session_state.hand),
         guess, suit, comment
@@ -100,15 +96,18 @@ with tabs[0]:
             suit = st.selectbox(
                 "Choisir une couleur : ",
                 suit_fmt, format_func=lambda x: suit_fmt[x],
-                index=None, key="suit"
+                index=None, key="suit", placeholder="Pas d'annonce"
             )
 
         comment = st.text_area("Ajouter un commentaire :", key="comment")
 
         submitted = st.button("Valider", on_click=save_to_db, args=(guess, suit, comment))
 
-        if submitted and suit:
-            st.success(f"Mise enregistrée : {guess} {symbols[suit]}")
+        if submitted:
+            if suit:
+                st.success(f"Mise enregistrée : {guess} {symbols[suit]}")
+            else:
+                st.success(f"Mise enregistrée : Passer")
 
 with tabs[1]:
     df = get_db()
@@ -116,7 +115,7 @@ with tabs[1]:
     for row in df.itertuples():
         hand = [Path("assets", "cards", f"{card}.png") for card in row.hand.split(",")]
         st.image(sort_hand(hand), width=170)
-        st.metric(label="Mise", value=f"{row.guess} {symbols[row.suit]}")
+        st.metric(label="Mise", value=f"{row.guess} {symbols.get(row.suit)}" if row.suit else "Pas d'annonce")
         if row.comment:
             st.write(f"Commentaire: {row.comment}")
         st.divider()

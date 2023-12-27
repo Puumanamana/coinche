@@ -11,9 +11,10 @@ st.set_page_config(layout="wide")
 st.title("Coinche-moi STP")
 
 url = "https://raw.githubusercontent.com/Puumanamana/coinche/main/assets/cards"
-cards = [Path(f"{url}/{suit}_{value}.png") for suit in ["hearts", "diamonds", "spades", "clubs"]
+
+cards = [Path(url, f"{suit}_{value}.png")
+         for suit in ["hearts", "diamonds", "spades", "clubs"]
          for value in ["7", "8", "9", "10", "jack", "queen", "king", "ace"]]
-# cards = [x for x in Path("./assets/cards").glob("*.png") if not re.findall("[23456]", str(x))]
 suits = {x: x.stem.split('_')[0] for x in cards}
 symbols = dict(pique="♠", coeur="♥", carreau="♦", trefle="♣")
 
@@ -103,7 +104,8 @@ with tabs[1]:
     df = get_db()
 
     for row in df.itertuples():
-        hand = [Path(f"{url}/{card}.png") for card in row.hand.split(",")]
+        # hand = [Path(url, f"{card}.png") for card in row.hand.split(",")]
+        hand = [Path("assets", "cards", f"{card}.png") for card in row.hand.split(",")]
         st.image(sort_hand(hand), width=170)
         st.metric(label="Mise", value=f"{row.guess} {symbols[row.color.lower()]}")
         if row.comment:

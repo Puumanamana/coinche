@@ -39,6 +39,7 @@ def save_to_db(guess, suit, comment):
         ",".join(x.stem for x in st.session_state.hand),
         guess, suit, comment
     )
+    print("Saving: {}".format(db_entry))
     conn = sqlite3.connect('coinche.db')
     c = conn.cursor()
     c.execute("INSERT INTO coinche (hand, guess, suit, comment) VALUES (?, ?, ?, ?)", db_entry)

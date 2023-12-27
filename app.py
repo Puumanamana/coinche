@@ -10,20 +10,16 @@ st.set_page_config(layout="wide")
 
 st.title("Coinche-moi STP")
 
-cards = [x for x in Path("./playing-cards/img").glob("*.png") if not re.findall("[23456]", str(x))]
+cards = [x for x in Path("./assets/cards").glob("*.png") if not re.findall("[23456]", str(x))]
 suits = {x: x.stem.split('_')[0] for x in cards}
 symbols = dict(pique="♠", coeur="♥", carreau="♦", trefle="♣")
 
-def create_table():
-    conn = sqlite3.connect('coinche.db')
-    c = conn.cursor()
-    c.execute("CREATE TABLE IF NOT EXISTS coinche(hand, guess, color, comment)")
-    conn.commit()
-    conn.close()
+conn = sqlite3.connect('coinche.db')
+c = conn.cursor()
+c.execute("CREATE TABLE IF NOT EXISTS coinche(hand, guess, color, comment)")
+conn.commit()
+conn.close()
 
-create_table()
-
-# @st.cache_data
 def get_db():
     df = pd.read_sql(
         "SELECT * FROM coinche",

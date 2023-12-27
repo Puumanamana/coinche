@@ -16,11 +16,13 @@ cards = [Path("assets", "cards", f"{suit}_{value}.png")
          for suit in ["hearts", "diamonds", "spades", "clubs"]
          for value in ["7", "8", "9", "10", "jack", "queen", "king", "ace"]]
 suits = {x: x.stem.split('_')[0] for x in cards}
-symbols = dict(pique="♠", coeur="♥", carreau="♦", trefle="♣")
+symbols = dict(spades="♠", hearts="♥", diamonds="♦", clubs="♣", sans_atout="SA", tout_atout="TA")
+suit_fmt = dict(spades="Pique", hearts="Coeur", diamonds="Carreau", clubs="Trèfle",
+                sans_atout="Sans atout", tout_atout="Tout atout")
 
 conn = sqlite3.connect('coinche.db')
 c = conn.cursor()
-c.execute("CREATE TABLE IF NOT EXISTS coinche(hand, guess, color, comment)")
+c.execute("CREATE TABLE IF NOT EXISTS coinche(hand, guess, suit, comment)")
 conn.commit()
 conn.close()
 
@@ -43,7 +45,7 @@ def save_to_db(guess, suit, comment):
     )
     conn = sqlite3.connect('coinche.db')
     c = conn.cursor()
-    c.execute("INSERT INTO coinche (hand, guess, color, comment) VALUES (?, ?, ?, ?)", db_entry)
+    c.execute("INSERT INTO coinche (hand, guess, suit, comment) VALUES (?, ?, ?, ?)", db_entry)
     conn.commit()
 
     # Close connection
@@ -97,8 +99,8 @@ with tabs[0]:
         with col2:
             suit = st.selectbox(
                 "Choisir une couleur : ",
-                ["Coeur", "Carreau", "Pique", "Trèfle", "Sans atout", "Tout atout"],
-                index=None, key="color"
+                suit_fmt, format_func=lambda x: suit_fmt[x],
+                index=None, key="suit"
             )
 
         comment = st.text_area("Ajouter un commentaire :", key="comment")
@@ -106,7 +108,7 @@ with tabs[0]:
         submitted = st.button("Valider", on_click=save_to_db, args=(guess, suit, comment))
 
         if submitted and suit:
-            st.success(f"Mise enregistrée : {guess} {symbols[suit.lower()]}")
+            st.success(f"Mise enregistrée : {guess} {symbols[suit]}")
 
 with tabs[1]:
     df = get_db()
@@ -114,7 +116,7 @@ with tabs[1]:
     for row in df.itertuples():
         hand = [Path("assets", "cards", f"{card}.png") for card in row.hand.split(",")]
         st.image(sort_hand(hand), width=170)
-        st.metric(label="Mise", value=f"{row.guess} {symbols[row.color.lower()]}")
+        st.metric(label="Mise", value=f"{row.guess} {symbols[row.suit]}")
         if row.comment:
             st.write(f"Commentaire: {row.comment}")
         st.divider()

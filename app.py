@@ -34,11 +34,18 @@ def get_db():
     )
     return df.iloc[::-1]
 
-def save_to_db(guess, suit, comment):
-    db_entry = (
-        ",".join(x.stem for x in st.session_state.hand),
-        guess, suit, comment
-    )
+def save_to_db(guess, suit, comment, passer):
+
+    if passer:
+        db_entry = (
+            ",".join(x.stem for x in st.session_state.hand),
+            None, None, comment
+        )
+    else:
+        db_entry = (
+            ",".join(x.stem for x in st.session_state.hand),
+            guess, suit, comment
+        )
     print("Saving: {}".format(db_entry))
     conn = sqlite3.connect('coinche.db')
     c = conn.cursor()
@@ -88,24 +95,26 @@ with tabs[0]:
     layout, _ = st.columns([1, 1])
     with layout:
         col1, col2 = st.columns([1, 1])
+        passer = st.toggle("Passer")
         with col1:
             guess = st.number_input(
                 "Choisir une annonce : ", key="guess",
+                disabled=passer,
                 min_value=0, max_value=270, value=80, step=10
             )
         with col2:
             suit = st.selectbox(
                 "Choisir une couleur : ",
-                suit_fmt, format_func=lambda x: suit_fmt[x],
-                index=None, key="suit", placeholder="Pas d'annonce"
+                suit_fmt, format_func=lambda x: suit_fmt[x], disabled=passer,
+                key="suit"
             )
 
         comment = st.text_area("Ajouter un commentaire :", key="comment")
 
-        submitted = st.button("Valider", on_click=save_to_db, args=(guess, suit, comment))
+        submitted = st.button("Valider", on_click=save_to_db, args=(guess, suit, comment, passer))
 
         if submitted:
-            if suit:
+            if not passer:
                 st.success(f"Mise enregistrée : {guess} {symbols[suit]}")
             else:
                 st.success(f"Mise enregistrée : Passer")

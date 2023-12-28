@@ -10,40 +10,62 @@ st.set_page_config(layout="wide")
 
 st.title("Coinche-moi STP")
 
+# ------- Global vars
 # url = "https://raw.githubusercontent.com/Puumanamana/coinche/main/assets/cards"
 
 cards = [Path("assets", "cards", f"{suit}_{value}.png")
          for suit in ["hearts", "diamonds", "spades", "clubs"]
          for value in ["7", "8", "9", "10", "jack", "queen", "king", "ace"]]
+
 suits = {x: x.stem.split('_')[0] for x in cards}
 symbols = dict(spades="♠", hearts="♥", diamonds="♦", clubs="♣", sans_atout="SA", tout_atout="TA")
 suit_fmt = dict(spades="Pique", hearts="Coeur", diamonds="Carreau", clubs="Trèfle",
                 sans_atout="Sans atout", tout_atout="Tout atout")
 
+
+# ------- Initalize DB
 conn = sqlite3.connect('coinche.db')
 c = conn.cursor()
 c.execute("CREATE TABLE IF NOT EXISTS coinche(hand, guess, suit, comment)")
 conn.commit()
 conn.close()
 
+db_df = pd.read_sql(
+    "SELECT * FROM coinche",
+    con=sqlite3.connect('coinche.db'),
+).astype({"guess": "Int64"})
 
-def get_db():
-    df = pd.read_sql(
-        "SELECT * FROM coinche",
-        con=sqlite3.connect('coinche.db'),
-    )
-    return df.iloc[::-1]
+
+# ------- Admin panel
+
+st.markdown("#### Paramètres administrateur")
+admin_cols = st.columns([1, 1, 4])
+
+with admin_cols[0]:
+    train_mode = st.toggle("Mode entrainement", key="train")
+
+with open('coinche.db', 'rb') as f:
+    with admin_cols[1]:
+        st.download_button('Download database', f, file_name='coinche.db')
+
+if train_mode:
+    np.random.seed(42)
+    train_hands = [np.random.choice(cards, 8, replace=False) for _ in range(200)]
+
+# ------- Utility functions
+def format_hand_for_db(hand):
+    return ",".join(Path(x).stem for x in hand)
 
 def save_to_db(guess, suit, comment, passer):
 
     if passer:
         db_entry = (
-            ",".join(x.stem for x in st.session_state.hand),
+            format_hand_for_db(st.session_state.hand),
             None, None, comment
         )
     else:
         db_entry = (
-            ",".join(x.stem for x in st.session_state.hand),
+            format_hand_for_db(st.session_state.hand),
             guess, suit, comment
         )
     print("Saving: {}".format(db_entry))
@@ -54,9 +76,6 @@ def save_to_db(guess, suit, comment, passer):
 
     # Close connection
     conn.close()
-
-def update_hand():
-    st.session_state["hand"] = np.random.choice(cards, 8, replace=False)
 
 def sort_hand(hand):
     hand_df = pd.Series([card.stem for card in hand]).str.split("_", expand=True)
@@ -82,16 +101,21 @@ def sort_hand(hand):
 
     return hand_df.sort_values(["suit", "number"], ascending=False).index.astype(str).to_list()
 
-tabs = st.tabs(["Jouer", "Historique"])
+def update_hand():
+    if st.session_state.get("train", False):
+        try:
+            hand = train_hands[st.session_state.get("hand_idx", 0)]
+            st.session_state["hand_idx"] = st.session_state.get("hand_idx", 0) + 1
+        except IndexError:
+            st.success("Fin de l'entrainement. Selectionnez \"Prochaine main\" pour recommencer")
+            st.session_state["hand_idx"] = 0
+            return
+        st.success("Main numero {}".format(st.session_state["hand_idx"]))
+    else:
+        hand = np.random.choice(cards, 8, replace=False)
+    st.session_state["hand"] = sort_hand(hand)
 
-with tabs[0]:
-    update_hand = st.button("Prochaine main", on_click=update_hand, type="primary")
-
-    if not "hand" in st.session_state:
-        st.stop()
-
-    st.image(sort_hand(st.session_state.hand), width=170)
-
+def guess_menu():
     layout, _ = st.columns([1, 1])
     with layout:
         col1, col2 = st.columns([1, 1])
@@ -111,21 +135,54 @@ with tabs[0]:
 
         comment = st.text_area("Ajouter un commentaire :", key="comment")
 
-        submitted = st.button("Valider", on_click=save_to_db, args=(guess, suit, comment, passer))
+        submitted = st.button("Valider", key="submitted", on_click=save_to_db, args=(guess, suit, comment, passer))
 
         if submitted:
             if not passer:
                 st.success(f"Mise enregistrée : {guess} {symbols[suit]}")
             else:
-                st.success(f"Mise enregistrée : Passer")
+                st.success(f"Mise enregistrée : Passe")
+
+def show_stats():
+    db_entry = db_df[db_df.hand.str.contains(format_hand_for_db(st.session_state.hand))]
+
+    if db_entry.empty:
+        value = "Not in database"
+        sd = None
+        n_votes = 0
+    else:
+        annonces = db_entry.guess.astype(str).str.cat(
+            db_entry.suit.map(lambda x: symbols.get(x)), sep=" "
+        ).fillna("Passe")
+        value = annonces.mode().iloc[0]
+        sd = db_entry.guess.std()
+        if pd.isnull(sd):
+            sd = 0
+        n_votes = db_entry.shape[0]
+
+    s = "s" if n_votes > 1 else ""
+    st.metric(value=value, label=f"Annonce la plus populaire [{n_votes} vote{s}]", delta=sd)
+
+
+# ------- Main app
+tabs = st.tabs(["Jouer", "Historique"])
+
+with tabs[0]:
+    st.button("Prochaine main", on_click=update_hand, type="primary")
+
+    if "hand" in st.session_state:
+        st.image(st.session_state.hand, width=170)
+        guess_menu()
+    if st.session_state.get("submitted", False):
+        show_stats()
 
 with tabs[1]:
-    df = get_db()
+    st.subheader("Historique des 10 dernières mains")
 
-    for row in df.itertuples():
+    for row in db_df.tail(10).iloc[::-1].itertuples():
         hand = [Path("assets", "cards", f"{card}.png") for card in row.hand.split(",")]
         st.image(sort_hand(hand), width=170)
-        st.metric(label="Mise", value=f"{row.guess} {symbols.get(row.suit)}" if row.suit else "Pas d'annonce")
+        st.metric(label="Mise", value=f"{row.guess} {symbols.get(row.suit)}" if row.suit else "Passe")
         if row.comment:
             st.write(f"Commentaire: {row.comment}")
         st.divider()

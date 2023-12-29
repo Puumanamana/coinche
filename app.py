@@ -1,14 +1,15 @@
+import math
+import re
+from itertools import zip_longest, combinations
+from pathlib import Path
 import numpy as np
 import pandas as pd
-from pathlib import Path
 import streamlit as st
-import re
-from itertools import zip_longest
 import sqlite3
 
 st.set_page_config(layout="wide")
 
-st.title("Coinche-moi STP")
+st.title("Professeur Coinche")
 
 # ------- Global vars
 # url = "https://raw.githubusercontent.com/Puumanamana/coinche/main/assets/cards"
@@ -22,7 +23,6 @@ symbols = dict(spades="♠", hearts="♥", diamonds="♦", clubs="♣", sans_ato
 suit_fmt = dict(spades="Pique", hearts="Coeur", diamonds="Carreau", clubs="Trèfle",
                 sans_atout="Sans atout", tout_atout="Tout atout")
 
-
 # ------- Initalize DB
 conn = sqlite3.connect('coinche.db')
 c = conn.cursor()
@@ -35,29 +35,28 @@ db_df = pd.read_sql(
     con=sqlite3.connect('coinche.db'),
 ).astype({"guess": "Int64"})
 
-
 # ------- Admin panel
-
 st.markdown("#### Paramètres administrateur")
-admin_cols = st.columns([1, 1, 4])
+admin_cols = st.columns([1, 1, 1])
 
 with admin_cols[0]:
     train_mode = st.toggle("Mode entrainement", key="train")
 
 with open('coinche.db', 'rb') as f:
-    with admin_cols[1]:
+    with admin_cols[-1]:
         st.download_button('Download database', f, file_name='coinche.db')
 
-if train_mode:
-    np.random.seed(42)
-    train_hands = [np.random.choice(cards, 8, replace=False) for _ in range(200)]
+def get_hand_by_index(index):
+    hand = [cards[i] for i in unrank_combination(st.session_state.hands[index])]
+    return hand
 
-# ------- Utility functions
+def next_hand():
+    st.session_state.hand_idx += 1
+
 def format_hand_for_db(hand):
     return ",".join(Path(x).stem for x in hand)
 
 def save_to_db(guess, suit, comment, passer):
-
     if passer:
         db_entry = (
             format_hand_for_db(st.session_state.hand),
@@ -92,7 +91,7 @@ def sort_hand(hand):
     # Alternate colors
     suit_order = [
         suit
-        for suits in zip_longest(suits_found[color_max], suits_found[other_color])
+        for suits in zip_longest(suits_found[color_max], suits_found.get(other_color, []))
         for suit in suits if suit is not None
     ]
 
@@ -101,47 +100,31 @@ def sort_hand(hand):
 
     return hand_df.sort_values(["suit", "number"], ascending=False).index.astype(str).to_list()
 
-def update_hand():
-    if st.session_state.get("train", False):
-        try:
-            hand = train_hands[st.session_state.get("hand_idx", 0)]
-            st.session_state["hand_idx"] = st.session_state.get("hand_idx", 0) + 1
-        except IndexError:
-            st.success("Fin de l'entrainement. Selectionnez \"Prochaine main\" pour recommencer")
-            st.session_state["hand_idx"] = 0
-            return
-        st.success("Main numero {}".format(st.session_state["hand_idx"]))
-    else:
-        hand = np.random.choice(cards, 8, replace=False)
-    st.session_state["hand"] = sort_hand(hand)
-
 def guess_menu():
-    layout, _ = st.columns([1, 1])
-    with layout:
-        col1, col2 = st.columns([1, 1])
-        passer = st.toggle("Passer")
-        with col1:
-            guess = st.number_input(
-                "Choisir une annonce : ", key="guess",
-                disabled=passer,
-                min_value=0, max_value=270, value=80, step=10
-            )
-        with col2:
-            suit = st.selectbox(
-                "Choisir une couleur : ",
-                suit_fmt, format_func=lambda x: suit_fmt[x], disabled=passer,
-                key="suit"
-            )
+    col1, col2 = st.columns([1, 1])
+    passer = st.toggle("Passer")
+    with col1:
+        guess = st.number_input(
+            "Choisir une annonce : ", key="guess",
+            disabled=passer,
+            min_value=0, max_value=270, value=80, step=10
+        )
+    with col2:
+        suit = st.selectbox(
+            "Choisir une couleur : ",
+            suit_fmt, format_func=lambda x: suit_fmt[x], disabled=passer,
+            key="suit"
+        )
 
-        comment = st.text_area("Ajouter un commentaire :", key="comment")
+    comment = st.text_area("Ajouter un commentaire :", key="comment")
 
-        submitted = st.button("Valider", key="submitted", on_click=save_to_db, args=(guess, suit, comment, passer))
+    submitted = st.button("Valider", key="submitted", on_click=save_to_db, args=(guess, suit, comment, passer))
 
-        if submitted:
-            if not passer:
-                st.success(f"Mise enregistrée : {guess} {symbols[suit]}")
-            else:
-                st.success(f"Mise enregistrée : Passe")
+    if submitted:
+        if not passer:
+            st.success(f"Mise enregistrée : {guess} {symbols[suit]}")
+        else:
+            st.success(f"Mise enregistrée : Passe")
 
 def show_stats():
     db_entry = db_df[db_df.hand.str.contains(format_hand_for_db(st.session_state.hand))]
@@ -163,16 +146,49 @@ def show_stats():
     s = "s" if n_votes > 1 else ""
     st.metric(value=value, label=f"Annonce la plus populaire [{n_votes} vote{s}]", delta=sd)
 
+def unrank_combination(m, k=8):
+    """
+    Return the combination of cards corresponding to the n-th hand
+    Extracted from: https://computationalcombinatorics.wordpress.com/2012/09/10/ranking-and-unranking-of-combinations-and-permutations/
+    """
+    comb = np.arange(k)
+    for i in range(k)[::-1]:
+        l = i
+        while math.comb(l, i+1) <= m:
+            l += 1
 
-# ------- Main app
+        comb[i] = l-1
+        m -= math.comb(l-1, i+1)
+
+    return comb
+
+
+# ------- Hand order
+
+n_hands = math.comb(len(cards), 8)
+
+if train_mode:
+    np.random.seed(42)
+    hand_nb = st.number_input(
+        "Main numéro : ", key="hand_idx", min_value=0, max_value=n_hands-1, value=0, step=1,
+    )
+
+if "hands" not in st.session_state:
+    st.session_state["hands"] = np.random.choice(range(n_hands), n_hands, replace=False)
+
+if "hand_idx" not in st.session_state:
+    st.session_state["hand_idx"] = 0
+
+# ------- Main App
+
 tabs = st.tabs(["Jouer", "Historique"])
 
 with tabs[0]:
-    st.button("Prochaine main", on_click=update_hand, type="primary")
+    st.button("Prochaine main", on_click=next_hand, type="primary")
+    hand = [str(h) for h in get_hand_by_index(st.session_state.hand_idx)]
+    st.image(hand, width=170)
+    guess_menu()
 
-    if "hand" in st.session_state:
-        st.image(st.session_state.hand, width=170)
-        guess_menu()
     if st.session_state.get("submitted", False):
         show_stats()
 

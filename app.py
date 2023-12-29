@@ -46,12 +46,14 @@ with open('coinche.db', 'rb') as f:
     with admin_cols[-1]:
         st.download_button('Download database', f, file_name='coinche.db')
 
-def get_hand_by_index(index):
-    hand = [cards[i] for i in unrank_combination(st.session_state.hands[index])]
-    return hand
+def update_hand():
+    index = st.session_state.hands[st.session_state.hand_idx]
+    hand = [cards[i] for i in unrank_combination(index)]
+    st.session_state.hand = sort_hand(hand)
 
 def next_hand():
     st.session_state.hand_idx += 1
+    update_hand()
 
 def format_hand_for_db(hand):
     return ",".join(Path(x).stem for x in hand)
@@ -171,6 +173,7 @@ if train_mode:
     np.random.seed(42)
     hand_nb = st.number_input(
         "Main numéro : ", key="hand_idx", min_value=0, max_value=n_hands-1, value=0, step=1,
+        on_change=update_hand
     )
 
 if "hands" not in st.session_state:
@@ -179,14 +182,16 @@ if "hands" not in st.session_state:
 if "hand_idx" not in st.session_state:
     st.session_state["hand_idx"] = 0
 
+if "hand" not in st.session_state:
+    update_hand()
+
 # ------- Main App
 
 tabs = st.tabs(["Jouer", "Historique"])
 
 with tabs[0]:
     st.button("Prochaine main", on_click=next_hand, type="primary")
-    hand = [str(h) for h in get_hand_by_index(st.session_state.hand_idx)]
-    st.image(hand, width=170)
+    st.image(st.session_state.hand, width=170)
     guess_menu()
 
     if st.session_state.get("submitted", False):
